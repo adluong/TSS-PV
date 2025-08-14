@@ -22,11 +22,13 @@ def banner():
 E = lambda v: v if isinstance(v, (bytes, bytearray)) else bytes(v)
 
 # ────────── global counters ──────────
-CNT = RB_CNT = 0
-bump = lambda: globals().__setitem__("CNT", CNT + 1)
+CNT = RB_CNT = RBOX_CNT = 0
+IN_RBOX = False
+bump = lambda: globals().__setitem__("CNT", CNT + 1) if not IN_RBOX else globals().__setitem__("RBOX_CNT", RBOX_CNT + 1)
 rb_bump = lambda d: globals().__setitem__("RB_CNT", RB_CNT + d)
 reset = lambda: globals().__setitem__("CNT", 0)
 rb_reset = lambda: globals().__setitem__("RB_CNT", 0)
+rbox_reset = lambda: globals().__setitem__("RBOX_CNT", 0)
 
 # ────────── curve wrappers ──────────
 B = b'\x58' + b'\x66'*31
@@ -110,7 +112,7 @@ def recon(shs):
     return acc
 
 # ────────── verification helpers ──────────
-def ShD(T, cm):
+def ShD(sh, T, cm):
     # Check cm consistency
     if any(t[7] != cm for t in T):  # Use cm field (index 7)
         return 0
@@ -126,7 +128,7 @@ def ShS(sh, T, g):
     return int(any((fx == fx_j and y == px_j) or (fx == fz_j and y == pz_j) for fx_j, fz_j, px_j, pz_j, _, _, _, _ in T))
 
 # ────────── reconstruction oracle with ShS and ShD checks ──────────
-def Rbox(k, embeds, T, g, cm):
+def Rbox(sh, T, g, cm):
     def R(shares):
         shares = [shares] if isinstance(shares, tuple) else list(shares)
         all_shares = shares
@@ -142,10 +144,9 @@ def Rbox(k, embeds, T, g, cm):
         if len(uniq) < k:
             # print(f"Rbox: Not enough unique shares ({len(uniq)})")
             return None
-        before, t0 = CNT, time.perf_counter()
+        globals()["IN_RBOX"] = True
         res = recon(list(uniq.items())[:k])
-        rb_bump(CNT - before)
-        globals().__setitem__("RB_TIME", globals().get("RB_TIME", 0.0) + (time.perf_counter() - t0))
+        globals()["IN_RBOX"] = False
         return res
     return R
 
@@ -205,16 +206,20 @@ def run(n, k, f):
     g = gpoly(k - 1)
     xs = [(i + 1).to_bytes(32, 'little') for i in range(n)]
     zs = [rand() for _ in range(n)]  # Dummy share x values
+
     # Player share generation
     reset(); t0 = time.perf_counter()
     fx = [hp(x, g) for x in xs]
     fz = [hp(z, g) for z in zs]
     print(f"[share ] {1e3*(time.perf_counter()-t0)/n:7.1f} ms {CNT//n:3d} mul/ply"); banner()
+
     # Dealer operations
     r, s = rand(), rand(); S = Sm(s); cm_ = cm(r, s)
+
     # Generate ElGamal key pair for dealer
     sk = rand(); pk = Pm(sk, B)
     reset(); t0 = time.perf_counter()
+
     px, pz, T = [], [], []
     dsh = []
     for i in range(n):
@@ -229,17 +234,21 @@ def run(n, k, f):
         px.append(px_i)
         pz.append(pz_i)
         dsh.append((zs[i], pz_i))
+        
     # Ensure shv uses exact px from T
     shv = [(xs[i], T[i][2]) for i in range(n)]  # Explicitly take px_i from T
     print(f"[dealer] {1e3*(time.perf_counter()-t0):7.1f} ms {CNT:4d} mul"); banner()
+
     # VerifySD
     reset(); t0 = time.perf_counter()
     ok = ShD(T, cm_)
     print(f"[ShD ] {1e3*(time.perf_counter()-t0):7.1f} ms {CNT//n:3d} mul ok={ok}"); banner()
+
     # VerifySS
     reset(); t0 = time.perf_counter()
     allok = all(ShS(sh, T, g) for sh in shv[:k])
     print(f"[ShS ] {1e3*(time.perf_counter()-t0):7.1f} ms {CNT//k:3d} mul all={allok}"); banner()
+
     # Reconstruction
     rb_reset(); globals().__setitem__("RB_TIME", 0.0)
     R = Rbox(k, random.sample(shv, f), T, g, cm_)  # Use dummy shares for embeds
@@ -248,6 +257,7 @@ def run(n, k, f):
     reconstructed = recon(shv[:k])
     ok = reconstructed == secret
     print(f"[Recon ] {1e3*(time.perf_counter()-t0):7.1f} ms {CNT:4d} mul ok={ok}"); banner()
+
     # Trace
     tk = ((r, s, S), dsh, shv)
     rb_before, c_before, t0 = RB_CNT, CNT, time.perf_counter()
@@ -255,14 +265,21 @@ def run(n, k, f):
     dt = time.perf_counter() - t0
     trace_mul = CNT - c_before
     trace_ms = 1e3 * dt
+    rbox_trace_mul = RBOX_CNT  # Rbox-specific multiplications for Trace
+    rbox_trace_time = globals().get("RB_TIME", 0.0)  # Use RB_TIME for Rbox time in Trace
     print(f"[Trace ] {trace_ms:7.1f} ms {trace_mul:4d} mul |I|={len(I)}"); banner()
+    print(f"[Rbox_in_Trace ] {1e3*rbox_trace_time:7.1f} ms {rbox_trace_mul:4d} mul"); banner()
+
     # TrVer
     rb_before, c_before, t0 = RB_CNT, CNT, time.perf_counter()
     ok = TrVer(tk, I, T, π, g, f, k, R, cm_)
     dt = time.perf_counter() - t0
     trv_mul = CNT - c_before
     trv_ms = 1e3 * dt
+    rbox_trver_mul = RBOX_CNT  # Rbox-specific multiplications for TrVer
+    rbox_trver_time = globals().get("RB_TIME", 0.0)  # Use RB_TIME for Rbox time in TrVer
     print(f"[TrVer ] {trv_ms:7.1f} ms {trv_mul:4d} mul ok={ok}"); banner()
+    print(f"[Rbox_in_TrVer ] {1e3*rbox_trver_time:7.1f} ms {rbox_trver_mul:4d} mul"); banner()
 
 # ────────── entry ──────────
 if __name__ == "__main__":
