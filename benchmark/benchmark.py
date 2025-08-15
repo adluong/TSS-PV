@@ -57,13 +57,14 @@ def rand():
     return secrets.token_bytes(32)
 def cm(r, s):
     return P(Pm(r, H1), Pm(s, H2))
-def rho(h, r, s):
-    return P(Pm(r, h), Pm(s, B))
-def _sample(x, g, r, s):
-    return (x, rho(hp(x, g), r, s))
+def rho(h, r, S):
+    return P(Pm(r, h), S)
+def _sample(x, g, r, S):
+    return (x, rho(hp(x, g), r, S))
 
 ONE = b'\x01' + b'\0'*31
 H1, H2 = Pm(b'\x02'+b'\0'*31, B), Pm(b'\x03'+b'\0'*31, B)
+ID = Sm(b"\0" * 32)
 
 # ────────── ElGamal encryption ──────────
 def elgamal_encrypt(m, pk, sk=None):
@@ -109,7 +110,7 @@ def montgomery_batch_invert(values):
     return invs
 
 def recon(shs):
-    acc = Sm(b"\0" * 32)
+    acc = ID
     k = len(shs)
     denoms = [ONE] * k
     for j in range(k):
@@ -128,23 +129,30 @@ def recon(shs):
 # ────────── Verification helpers ──────────
 def ShD(T, cm):
     if any(t[7] != cm for t in T):
-        return 0
+        return False
     for fx_i, fz_i, px_i, pz_i, π_i, πp_i, _, _ in T:
         if not (check(fx_i, px_i, cm, π_i) and check(fz_i, pz_i, cm, πp_i)):
-            return 0
-    return 1
+            return False
+    return True
 
 def ShS(sh, T, g):
     x, y = sh
     fx = hp(x, g)
-    return int(any((fx == fx_j and y == px_j) or (fx == fz_j and y == pz_j) for fx_j, fz_j, px_j, pz_j, _, _, _, _ in T))
+    for fx_j, fz_j, px_j, pz_j, π_j, πp_j, _, cm_j in T:
+        if (fx == fx_j and y == px_j):
+            if check(fx, px_j, cm_j, π_j):
+                return True
+        elif (fx == fz_j and y == pz_j):
+            if check(fx, pz_j, cm_j, πp_j):
+                return True
+    return False  # No match found
 
 # ────────── Reconstruction oracle ──────────
 def Rbox(k, embeds, T, g, cm):
     def R(shares):
         shares = [shares] if isinstance(shares, tuple) else list(shares)
         valid_shares = embeds[:]
-        for x, y in shares:
+        for x, y in shares: #t-f shares * t+5 muls
             if not ShS((x, y), T, g):
                 return None
             valid_shares.append((x, y))
@@ -152,8 +160,8 @@ def Rbox(k, embeds, T, g, cm):
         if len(uniq) < k:
             return None
         before, t0 = CNT, time.perf_counter()
-        res = recon(list(uniq.items())[:k])
-        rb_bump(CNT - before)
+        res = recon(list(uniq.items())[:k]) #t shares
+        # rb_bump(CNT - before)
         globals()['RB_TIME'] = globals().get('RB_TIME', 0.0) + (time.perf_counter() - t0)
         return res
     return R
@@ -178,24 +186,24 @@ def TrVer(vk, I, T, π, g, f, t, R, cm):
     ζ, dsh, shv = vk
     r, s, S = ζ
     if any(t[7] != cm for t in T):
-        return 0
+        return False
     if not all(sh in shv for sh in π):
-        return 0
+        return False
     for x, px in shv:
-        if px != rho(hp(x, g), r, s):
-            return 0
+        if px != rho(hp(x, g), r, S):
+            return False
     for z, pz in dsh:
-        if pz != rho(hp(z, g), r, s):
-            return 0
+        if pz != rho(hp(z, g), r, S):
+            return False
     DSH = select_dummy_shares(dsh, shv, t, f)
     for idx in I:
         x, y = shv[idx]
         fx = hp(x, g)
         if not any((y == px_j and fx == fx_j) or (y == pz_j and fx == fz_j) for fx_j, fz_j, px_j, pz_j, _, _, _, _ in T):
-            return 0
+            return False
         if R(DSH + [shv[idx]]) == S:
-            return 0
-    return 1
+            return False
+    return True
 
 # ────────── Benchmark harness ──────────
 def run(n, k, f):
@@ -214,19 +222,19 @@ def run(n, k, f):
     # Dealer operations
     r, s = rand(), rand()
     S = Sm(s)
-    cm_ = cm(r, s)
     sk = rand()
     pk = Pm(sk, B)
     reset()
+    cm_ = cm(r, s)
     t0 = time.perf_counter()
     zs = [rand() for _ in range(n)]
     fz = [hp(z, g) for z in zs]
     T = []
     dsh = []
     for i in range(n):
-        px_i = rho(fx[i], r, s)
+        px_i = rho(fx[i], r, S)
         π_i = proof(fx[i], px_i, cm_, r, s)
-        pz_i = rho(fz[i], r, s)
+        pz_i = rho(fz[i], r, S)
         πp_i = proof(fz[i], pz_i, cm_, r, s)
         T.append((fx[i], fz[i], px_i, pz_i, π_i, πp_i, (), cm_))
         dsh.append((zs[i], pz_i))
@@ -271,7 +279,7 @@ def run(n, k, f):
     # TrVer
     rb_before, c_before, t0 = RB_CNT, CNT, time.perf_counter()
     ok = TrVer(tk, I, T, π, g, f, k, R, cm_)
-    trv_mul = CNT - c_before
+    trv_mul = CNT - c_before + 3 #precompute S and cm costs 3 mul
     trv_ms = 1e3 * (time.perf_counter() - t0)
     print(f"[TrVer ] {trv_ms:7.1f} ms {trv_mul:4d} mul ok={ok}")
     banner()
