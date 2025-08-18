@@ -123,7 +123,12 @@ def ShD(T, cm):
 def ShS(sh, T, g):
     x, y = sh
     fx = hp(x, g)
-    return int(any((fx == fx_j and y == px_j) or (fx == fz_j and y == pz_j) for fx_j, fz_j, px_j, pz_j, _, _, _, _ in T))
+    # res = int(any((fx == fx_j and y == px_j) or (fx == fz_j and y == pz_j) for fx_j, fz_j, px_j, pz_j, _, _, _, _ in T))
+    for fx_j, fz_j, px_j, pz_j, π_j, πp_j, _, cm_j in T:
+        if fx == fx_j and fx == fz_j:
+            if check(fx, px_j, cm_j, π_j) and check(fx, pz_j, cm_j, πp_j):
+                return True
+    return False  # No match found
 
 # ────────── reconstruction oracle with ShS and ShD checks ──────────
 def Rbox(k, embeds, T, g, cm):
