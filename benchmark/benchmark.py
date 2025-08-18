@@ -182,26 +182,27 @@ def Trace(tk, T, g, f, t, R, cm):
             I.discard(idx)
     return sorted(I), [shv[i] for i in I]
 
-def TrVer(vk, I, T, π, g, f, t, R, cm):
+def TrVer(vk, I, T, π, g, f, t, R, cm_):
     ζ, dsh, shv = vk
     r, s, S = ζ
-    if any(t[7] != cm for t in T):
+    if any(t[7] != cm_ for t in T):
+        return False
+    if cm_ != cm(r, s) or S != Sm(s): #3 muls
         return False
     if not all(sh in shv for sh in π):
         return False
     for x, px in shv:
-        if px != rho(hp(x, g), r, S):
+        if px != rho(hp(x, g), r, S): #nt muls
             return False
     for z, pz in dsh:
-        if pz != rho(hp(z, g), r, S):
+        if pz != rho(hp(z, g), r, S): #nt muls
             return False
     DSH = select_dummy_shares(dsh, shv, t, f)
     for idx in I:
         x, y = shv[idx]
-        fx = hp(x, g)
-        if not any((y == px_j and fx == fx_j) or (y == pz_j and fx == fz_j) for fx_j, fz_j, px_j, pz_j, _, _, _, _ in T):
+        if not any((y == px_j) or (y == pz_j) for _, _, px_j, pz_j, _, _, _, _ in T):
             return False
-        if R(DSH + [shv[idx]]) == S:
+        if R(DSH + [shv[idx]]) == S: #(t+5)muls per ShS on 1 share. There are t-f shares fed to R
             return False
     return True
 
@@ -268,18 +269,20 @@ def run(n, k, f):
     banner()
 
     # Trace
+    reset()
     tk = ((r, s, S), dsh, shv)
-    rb_before, c_before, t0 = RB_CNT, CNT, time.perf_counter()
+    time.perf_counter()
     I, π = Trace(tk, T, g, f, k, R, cm_)
-    trace_mul = CNT - c_before
+    trace_mul = CNT
     trace_ms = 1e3 * (time.perf_counter() - t0)
     print(f"[Trace ] {trace_ms:7.1f} ms {trace_mul:4d} mul |I|={len(I)}")
     banner()
 
     # TrVer
-    rb_before, c_before, t0 = RB_CNT, CNT, time.perf_counter()
+    reset()
+    time.perf_counter()
     ok = TrVer(tk, I, T, π, g, f, k, R, cm_)
-    trv_mul = CNT - c_before + 3 #precompute S and cm costs 3 mul
+    trv_mul = CNT
     trv_ms = 1e3 * (time.perf_counter() - t0)
     print(f"[TrVer ] {trv_ms:7.1f} ms {trv_mul:4d} mul ok={ok}")
     banner()
