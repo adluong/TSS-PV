@@ -271,7 +271,7 @@ def run(n, k, f):
     # Trace
     reset()
     tk = ((r, s, S), dsh, shv)
-    time.perf_counter()
+    t0 = time.perf_counter()
     I, π = Trace(tk, T, g, f, k, R, cm_)
     trace_mul = CNT
     trace_ms = 1e3 * (time.perf_counter() - t0)
@@ -280,7 +280,7 @@ def run(n, k, f):
 
     # TrVer
     reset()
-    time.perf_counter()
+    t0 = time.perf_counter()
     ok = TrVer(tk, I, T, π, g, f, k, R, cm_)
     trv_mul = CNT
     trv_ms = 1e3 * (time.perf_counter() - t0)
@@ -289,5 +289,5 @@ def run(n, k, f):
 
 # ────────── Entry ──────────
 if __name__ == "__main__":
-    for n, k, f in [(32, 17, 11), (64, 33, 22), (128, 65, 43), (256, 129, 86)]:
+    for n, k, f in [(32, 17, 11), (64, 33, 22), (128, 65, 43), (256, 129, 85)]:
         run(n, k, f)
