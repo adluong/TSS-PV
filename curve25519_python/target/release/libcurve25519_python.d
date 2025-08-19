@@ -1,0 +1,1 @@
+/mnt/c/Users/test/work/pp4_implementation/testing_c25519_venv/TSS-PV/curve25519_python/target/release/libcurve25519_python.so: /mnt/c/Users/test/work/pp4_implementation/testing_c25519_venv/TSS-PV/curve25519_python/src/lib.rs
