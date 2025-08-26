@@ -1,4 +1,4 @@
-# TSS-PV Benchmark
+# Traceable Secret Sharing with Public Verifiability (TSS-PV) Benchmark by `adluong11`
 1. Prerequisites
    - AVX2 enabled CPU
    - Python 3.10
