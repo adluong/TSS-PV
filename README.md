@@ -8,3 +8,4 @@
 2. Run the build script: `./curve25519_python/build_script.sh`
 3. Run the benchmark: `python3 ./benchmark/benchmark.py`
 4. Historical versions can be found in `./history`
+5. Module is W.I.P
