@@ -9,4 +9,5 @@
 3. Run the benchmark: `python3 ./benchmark/benchmark.py`
 4. Historical versions can be found in `./history`
 5. Module is W.I.P
-Note: The PDF paper will be available soon.
+   
+_Note: The PDF paper will be available soon._
